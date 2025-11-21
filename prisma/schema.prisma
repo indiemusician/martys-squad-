@@ -1,0 +1,74 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// User model - Les artistes utilisant Marty's Squad
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Info artiste
+  artistName String?
+  email      String?  @unique
+  phone      String?  @unique // Pour WhatsApp
+
+  // Metadata
+  musicStyle String?
+
+  // Relations
+  conversations Conversation[]
+
+  @@index([phone])
+  @@index([email])
+}
+
+// Conversation model - Une session de chat avec un utilisateur
+model Conversation {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  // Metadata
+  currentCoach String @default("marty") // Coach actuel de la conversation
+  platform     String @default("web") // web, whatsapp, etc.
+
+  @@index([userId])
+  @@index([updatedAt])
+}
+
+// Message model - Un message dans une conversation
+model Message {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  // Relations
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  // Contenu
+  role    String // user | assistant
+  content String @db.Text
+  coach   String? // marty, luke, peter, etc.
+
+  // Metadata API
+  model         String? // claude-3-haiku-20240307
+  tokensInput   Int?
+  tokensOutput  Int?
+  cost          Float?
+
+  @@index([conversationId])
+  @@index([createdAt])
+}

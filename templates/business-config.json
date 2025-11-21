@@ -1,0 +1,88 @@
+{
+  "business": {
+    "name": "{{BUSINESS_NAME}}",
+    "type": "service",
+    "location": "{{CITY}}, {{COUNTRY}}",
+    "contactEmail": "{{CONTACT_EMAIL}}",
+    "phone": "{{PHONE}}",
+    "timezone": "Europe/Paris",
+    "language": "fr"
+  },
+
+  "services": [
+    {
+      "id": "service_1",
+      "name": "{{SERVICE_NAME}}",
+      "price": {
+        "min": 100,
+        "max": 110
+      },
+      "duration": {
+        "min": 15,
+        "max": 20
+      },
+      "description": "{{SERVICE_DESCRIPTION}}",
+      "category": "{{CATEGORY}}",
+      "requiresHealthCheck": true
+    }
+  ],
+
+  "constraints": {
+    "age": {
+      "min": 5,
+      "max": null,
+      "message": "Âge minimum: 5 ans"
+    },
+    "weight": {
+      "min": null,
+      "max": 115,
+      "message": "Poids maximum: 115kg"
+    },
+    "absoluteContraindications": [
+      "Grossesse"
+    ],
+    "medicalEscalation": [
+      "Problèmes cardiaques sévères",
+      "Problèmes de dos/cervicales graves"
+    ]
+  },
+
+  "cancellationPolicy": {
+    "fullRefund": 15,
+    "freeReschedule": {
+      "min": 2,
+      "max": 15
+    },
+    "noRefund": 2,
+    "weatherRefund": true
+  },
+
+  "workflow": {
+    "steps": [
+      "qualify",
+      "check_availability",
+      "collect_info",
+      "validate",
+      "confirm"
+    ],
+    "requiredInfo": [
+      "name",
+      "email",
+      "phone",
+      "age",
+      "weight",
+      "healthConditions"
+    ]
+  },
+
+  "style": {
+    "tone": "amical",
+    "formality": "tutoiement",
+    "personality": "rassurant, patient, pédagogue",
+    "keywords": [
+      "sécurité",
+      "plaisir",
+      "découverte"
+    ]
+  }
+}
