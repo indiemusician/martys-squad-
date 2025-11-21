@@ -2,7 +2,7 @@
 import Redis from 'ioredis';
 
 const globalForRedis = globalThis as unknown as {
-  redis: Redis | undefined;
+  redis: Redis | null | undefined;
 };
 
 function createRedisClient() {
