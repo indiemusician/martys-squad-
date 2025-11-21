@@ -71,3 +71,6 @@ secrets/
 .prettierignore
 
 /lib/generated/prisma
+
+# Documentation with large files
+docs/
