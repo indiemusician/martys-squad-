@@ -34,9 +34,6 @@ const nextConfig = {
     ];
   },
 
-  // Configuration pour Railway
-  output: 'standalone',
-
   // Logging
   logging: {
     fetches: {
