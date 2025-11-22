@@ -3,6 +3,70 @@ import { NextRequest, NextResponse } from 'next/server';
 import { sendMessage } from '@/lib/integrations/anthropic';
 import { SYSTEM_PROMPTS, CoachName } from '@/lib/prompts/system-prompts';
 import { prisma } from '@/lib/db/prisma';
+import { getSession, setSession } from '@/lib/cache/redis';
+
+/**
+ * Génère un contexte de mémoire pour l'utilisateur
+ */
+async function getUserContext(conversationId: string | null, userId: string | null): Promise<string> {
+  if (!conversationId && !userId) return '';
+
+  try {
+    // Essayer de récupérer depuis Redis d'abord (plus rapide)
+    if (userId) {
+      const cached = await getSession(`user:${userId}`);
+      if (cached) {
+        return `
+📝 CONTEXTE UTILISATEUR (rappelle-toi de cette personne) :
+- Nom d'artiste : ${cached.artistName || 'Non défini'}
+- Dernier coach consulté : ${cached.lastCoach || 'Aucun'}
+- Dernière interaction : ${cached.lastInteraction || 'Première visite'}
+${cached.currentStep ? `- Étape en cours : ${cached.currentStep}` : ''}
+`;
+      }
+    }
+
+    // Sinon, chercher dans la DB
+    if (conversationId) {
+      const conversation = await prisma.conversation.findUnique({
+        where: { id: conversationId },
+        include: {
+          user: true,
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 5, // Les 5 derniers messages pour le contexte
+          },
+        },
+      });
+
+      if (conversation) {
+        const artistName = conversation.user?.artistName || 'Artiste';
+        const lastCoach = conversation.currentCoach;
+
+        // Sauvegarder dans Redis pour la prochaine fois
+        if (conversation.userId) {
+          await setSession(`user:${conversation.userId}`, {
+            artistName,
+            lastCoach,
+            lastInteraction: new Date().toISOString(),
+            conversationId,
+          }, 86400); // 24h
+        }
+
+        return `
+📝 CONTEXTE UTILISATEUR :
+- Nom d'artiste : ${artistName}
+- Coach actuel de la conversation : ${lastCoach}
+- Cette personne revient, adapte ton accueil en conséquence !
+`;
+      }
+    }
+  } catch (error) {
+    console.error('⚠️ [CONTEXT] Error getting user context:', error);
+  }
+
+  return '';
+}
 
 /**
  * POST /api/chat
@@ -15,13 +79,14 @@ import { prisma } from '@/lib/db/prisma';
  *   "coach": "marty" (optionnel, défaut: marty),
  *   "history": [...] (optionnel, pour continuer une conversation),
  *   "conversationId": "xxx" (optionnel, pour continuer une conversation existante),
- *   "userId": "xxx" (optionnel, pour associer à un utilisateur)
+ *   "userId": "xxx" (optionnel, pour associer à un utilisateur),
+ *   "artistName": "xxx" (optionnel, pour personnaliser)
  * }
  */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { message, coach = 'marty', history = [], conversationId, userId } = body;
+    const { message, coach = 'marty', history = [], conversationId, userId, artistName } = body;
 
     // Validation
     if (!message || typeof message !== 'string') {
@@ -32,7 +97,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Vérifier que le coach existe
-    const systemPrompt = SYSTEM_PROMPTS[coach as CoachName];
+    let systemPrompt = SYSTEM_PROMPTS[coach as CoachName];
     if (!systemPrompt) {
       return NextResponse.json(
         {
@@ -41,6 +106,17 @@ export async function POST(req: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Ajouter le contexte utilisateur au prompt système
+    const userContext = await getUserContext(conversationId, userId);
+    if (userContext) {
+      systemPrompt = systemPrompt + '\n' + userContext;
+    }
+
+    // Si on a un nom d'artiste, l'ajouter au contexte
+    if (artistName) {
+      systemPrompt = systemPrompt + `\n📝 Cette personne s'appelle ${artistName}. Utilise son nom !`;
     }
 
     // Construire l'historique de conversation
@@ -56,16 +132,22 @@ export async function POST(req: NextRequest) {
     let dbConversationId = conversationId;
 
     if (!dbConversationId) {
-      // Créer ou récupérer l'utilisateur (pour l'instant, un user anonyme par défaut)
+      // Créer ou récupérer l'utilisateur
       let dbUserId = userId;
       if (!dbUserId) {
-        // Créer un user anonyme
-        const anonymousUser = await prisma.user.create({
+        // Créer un user (avec nom d'artiste si fourni)
+        const newUser = await prisma.user.create({
           data: {
-            artistName: 'Anonymous',
+            artistName: artistName || 'Anonymous',
           },
         });
-        dbUserId = anonymousUser.id;
+        dbUserId = newUser.id;
+      } else if (artistName) {
+        // Mettre à jour le nom d'artiste si fourni
+        await prisma.user.update({
+          where: { id: dbUserId },
+          data: { artistName },
+        }).catch(() => {}); // Ignorer si l'user n'existe pas
       }
 
       // Créer une nouvelle conversation
@@ -77,6 +159,14 @@ export async function POST(req: NextRequest) {
         },
       });
       dbConversationId = conversation.id;
+
+      // Sauvegarder le contexte dans Redis
+      await setSession(`user:${dbUserId}`, {
+        artistName: artistName || 'Anonymous',
+        lastCoach: coach,
+        lastInteraction: new Date().toISOString(),
+        conversationId: dbConversationId,
+      }, 86400); // 24h
     }
 
     // Sauvegarder le message de l'utilisateur
