@@ -6,66 +6,118 @@ import { prisma } from '@/lib/db/prisma';
 import { getSession, setSession } from '@/lib/cache/redis';
 
 /**
- * Génère un contexte de mémoire pour l'utilisateur
+ * Recherche un utilisateur par son nom d'artiste et récupère son historique
  */
-async function getUserContext(conversationId: string | null, userId: string | null): Promise<string> {
-  if (!conversationId && !userId) return '';
+async function findUserByArtistName(artistName: string) {
+  if (!artistName || artistName === 'Anonymous') return null;
 
   try {
-    // Essayer de récupérer depuis Redis d'abord (plus rapide)
-    if (userId) {
-      const cached = await getSession(`user:${userId}`);
-      if (cached) {
-        return `
-📝 CONTEXTE UTILISATEUR (rappelle-toi de cette personne) :
-- Nom d'artiste : ${cached.artistName || 'Non défini'}
-- Dernier coach consulté : ${cached.lastCoach || 'Aucun'}
-- Dernière interaction : ${cached.lastInteraction || 'Première visite'}
-${cached.currentStep ? `- Étape en cours : ${cached.currentStep}` : ''}
-`;
-      }
-    }
-
-    // Sinon, chercher dans la DB
-    if (conversationId) {
-      const conversation = await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        include: {
-          user: true,
-          messages: {
-            orderBy: { createdAt: 'desc' },
-            take: 5, // Les 5 derniers messages pour le contexte
+    // Chercher l'utilisateur par nom d'artiste (case insensitive)
+    const user = await prisma.user.findFirst({
+      where: {
+        artistName: {
+          equals: artistName,
+          mode: 'insensitive',
+        },
+      },
+      include: {
+        conversations: {
+          orderBy: { updatedAt: 'desc' },
+          take: 1,
+          include: {
+            messages: {
+              orderBy: { createdAt: 'desc' },
+              take: 10, // Les 10 derniers messages
+            },
           },
         },
-      });
+      },
+    });
 
-      if (conversation) {
-        const artistName = conversation.user?.artistName || 'Artiste';
-        const lastCoach = conversation.currentCoach;
+    return user;
+  } catch (error) {
+    console.error('⚠️ [FIND_USER] Error:', error);
+    return null;
+  }
+}
 
-        // Sauvegarder dans Redis pour la prochaine fois
-        if (conversation.userId) {
-          await setSession(`user:${conversation.userId}`, {
-            artistName,
-            lastCoach,
-            lastInteraction: new Date().toISOString(),
-            conversationId,
-          }, 86400); // 24h
-        }
+/**
+ * Génère un contexte de mémoire pour l'utilisateur basé sur son nom d'artiste
+ */
+async function getUserContextByArtistName(artistName: string | null): Promise<{
+  context: string;
+  userId: string | null;
+  conversationId: string | null;
+  history: { role: 'user' | 'assistant'; content: string }[];
+}> {
+  if (!artistName || artistName === 'Anonymous') {
+    return { context: '', userId: null, conversationId: null, history: [] };
+  }
 
-        return `
-📝 CONTEXTE UTILISATEUR :
+  try {
+    // D'abord essayer Redis (plus rapide)
+    const cached = await getSession(`artist:${artistName.toLowerCase()}`);
+    if (cached) {
+      return {
+        context: `
+📝 CONTEXTE UTILISATEUR (tu connais déjà cette personne !) :
 - Nom d'artiste : ${artistName}
-- Coach actuel de la conversation : ${lastCoach}
-- Cette personne revient, adapte ton accueil en conséquence !
-`;
-      }
+- Dernier coach consulté : ${cached.lastCoach || 'marty'}
+- Dernière interaction : ${cached.lastInteraction || 'Récemment'}
+${cached.currentStep ? `- Étape en cours : ${cached.currentStep}` : ''}
+- C'est un(e) habitué(e), accueille-le/la chaleureusement et rappelle où vous en étiez !
+`,
+        userId: cached.userId,
+        conversationId: cached.conversationId,
+        history: cached.recentHistory || [],
+      };
+    }
+
+    // Sinon chercher dans la DB
+    const user = await findUserByArtistName(artistName);
+    if (user && user.conversations.length > 0) {
+      const lastConversation = user.conversations[0];
+      const recentMessages = lastConversation.messages.reverse(); // Du plus ancien au plus récent
+
+      // Construire l'historique
+      const history = recentMessages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      }));
+
+      // Sauvegarder dans Redis pour la prochaine fois
+      await setSession(`artist:${artistName.toLowerCase()}`, {
+        userId: user.id,
+        conversationId: lastConversation.id,
+        lastCoach: lastConversation.currentCoach,
+        lastInteraction: lastConversation.updatedAt.toISOString(),
+        recentHistory: history.slice(-6), // Garder les 6 derniers messages
+      }, 86400); // 24h
+
+      // Résumé du contexte pour le prompt
+      const lastMessages = recentMessages.slice(-4);
+      const conversationSummary = lastMessages.length > 0
+        ? `\nDerniers échanges :\n${lastMessages.map((m) => `- ${m.role === 'user' ? artistName : lastConversation.currentCoach}: "${m.content.substring(0, 100)}..."`).join('\n')}`
+        : '';
+
+      return {
+        context: `
+📝 CONTEXTE UTILISATEUR (tu connais déjà ${artistName} !) :
+- Dernier coach consulté : ${lastConversation.currentCoach}
+- Dernière interaction : ${lastConversation.updatedAt.toLocaleDateString('fr-FR')}
+- C'est un(e) habitué(e) ! Rappelle où vous en étiez.
+${conversationSummary}
+`,
+        userId: user.id,
+        conversationId: lastConversation.id,
+        history,
+      };
     }
   } catch (error) {
     console.error('⚠️ [CONTEXT] Error getting user context:', error);
   }
 
-  return '';
+  return { context: '', userId: null, conversationId: null, history: [] };
 }
 
 /**
@@ -108,20 +160,39 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Ajouter le contexte utilisateur au prompt système
-    const userContext = await getUserContext(conversationId, userId);
-    if (userContext) {
-      systemPrompt = systemPrompt + '\n' + userContext;
-    }
+    // Récupérer le contexte utilisateur par nom d'artiste (ou autres identifiants)
+    let resolvedUserId = userId;
+    let resolvedConversationId = conversationId;
+    let loadedHistory = history;
 
-    // Si on a un nom d'artiste, l'ajouter au contexte
     if (artistName) {
-      systemPrompt = systemPrompt + `\n📝 Cette personne s'appelle ${artistName}. Utilise son nom !`;
+      const userContext = await getUserContextByArtistName(artistName);
+
+      if (userContext.context) {
+        systemPrompt = systemPrompt + '\n' + userContext.context;
+      }
+
+      // Utiliser l'userId et conversationId trouvés
+      if (userContext.userId) {
+        resolvedUserId = userContext.userId;
+      }
+      if (userContext.conversationId && !conversationId) {
+        resolvedConversationId = userContext.conversationId;
+      }
+
+      // Si on n'a pas d'historique fourni, utiliser celui de la DB
+      if (history.length === 0 && userContext.history.length > 0) {
+        loadedHistory = userContext.history;
+        console.log(`📚 [HISTORY] Loaded ${loadedHistory.length} messages for ${artistName}`);
+      }
+
+      // Toujours ajouter le nom au prompt
+      systemPrompt = systemPrompt + `\n📝 Cette personne s'appelle ${artistName}. Utilise son nom dans tes réponses !`;
     }
 
     // Construire l'historique de conversation
     const messages = [
-      ...history,
+      ...loadedHistory,
       { role: 'user' as const, content: message }
     ];
 
