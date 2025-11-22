@@ -65,10 +65,11 @@ model Message {
   coach   String? // marty, luke, peter, etc.
 
   // Metadata API
-  model         String? // claude-3-haiku-20240307
-  tokensInput   Int?
-  tokensOutput  Int?
-  cost          Float?
+  model          String? // claude-3-haiku-20240307
+  tokensInput    Int?
+  tokensOutput   Int?
+  cost           Float?
+  responseTimeMs Int?    // Temps de réponse en millisecondes
 
   @@index([conversationId])
   @@index([createdAt])

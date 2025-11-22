@@ -25,15 +25,43 @@ export function getAnthropicClient() {
   });
 }
 
+// Prix Claude 3 Haiku (en $ par million de tokens)
+const HAIKU_PRICING = {
+  input: 0.25 / 1_000_000,   // $0.25 per MTok
+  output: 1.25 / 1_000_000,  // $1.25 per MTok
+};
+
+export interface SendMessageResult {
+  content: string;
+  tokensInput: number;
+  tokensOutput: number;
+  cost: number;
+  responseTimeMs: number;
+  model: string;
+}
+
 /**
- * Envoie un message à Claude et retourne la réponse
+ * Envoie un message à Claude et retourne la réponse avec les métriques
  * Compatible avec le mock et la vraie API
  */
 export async function sendMessage(
   messages: Array<{ role: 'user' | 'assistant'; content: string }>,
   systemPrompt: string
 ): Promise<string> {
+  const result = await sendMessageWithMetrics(messages, systemPrompt);
+  return result.content;
+}
+
+/**
+ * Envoie un message à Claude et retourne la réponse AVEC les métriques
+ * (tokens, coût, temps de réponse)
+ */
+export async function sendMessageWithMetrics(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  systemPrompt: string
+): Promise<SendMessageResult> {
   const client = getAnthropicClient();
+  const startTime = Date.now();
 
   const response = await client.messages.create({
     model: 'claude-3-haiku-20240307', // Claude 3 Haiku (fastest, cheapest)
@@ -42,8 +70,23 @@ export async function sendMessage(
     system: systemPrompt,
   });
 
-  // Les deux (mock et real) retournent le même format
-  return response.content[0].text;
+  const responseTimeMs = Date.now() - startTime;
+
+  // Extraire les tokens de la réponse
+  const tokensInput = response.usage?.input_tokens || 0;
+  const tokensOutput = response.usage?.output_tokens || 0;
+
+  // Calculer le coût
+  const cost = (tokensInput * HAIKU_PRICING.input) + (tokensOutput * HAIKU_PRICING.output);
+
+  return {
+    content: response.content[0].text,
+    tokensInput,
+    tokensOutput,
+    cost,
+    responseTimeMs,
+    model: 'claude-3-haiku-20240307',
+  };
 }
 
 /**

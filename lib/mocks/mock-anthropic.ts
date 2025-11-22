@@ -2,6 +2,10 @@
 
 interface MockResponse {
   content: Array<{ type: string; text: string }>;
+  usage: {
+    input_tokens: number;
+    output_tokens: number;
+  };
 }
 
 const MOCK_RESPONSES: Record<string, string> = {
@@ -205,6 +209,10 @@ export class MockAnthropic {
       console.log('💬 Response preview:', responseText.substring(0, 100) + '...');
       console.log('════════════════════════════════════\n');
 
+      // Simuler les tokens (estimation basique)
+      const inputTokens = Math.floor(userMessage.length / 4) + 500; // ~500 pour le system prompt
+      const outputTokens = Math.floor(responseText.length / 4);
+
       return {
         content: [
           {
@@ -212,6 +220,10 @@ export class MockAnthropic {
             text: responseText,
           },
         ],
+        usage: {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+        },
       };
     },
   };

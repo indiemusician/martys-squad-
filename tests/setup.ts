@@ -2,6 +2,7 @@
 import { vi } from 'vitest';
 
 // Mock environment variables for tests
+// @ts-expect-error - assigning to NODE_ENV for test purposes
 process.env.NODE_ENV = 'test';
 process.env.ANTHROPIC_API_KEY = 'test-api-key';
 process.env.REDIS_URL = 'mock';

@@ -1,6 +1,6 @@
 // app/api/chat/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { sendMessage } from '@/lib/integrations/anthropic';
+import { sendMessageWithMetrics } from '@/lib/integrations/anthropic';
 import { SYSTEM_PROMPTS, CoachName } from '@/lib/prompts/system-prompts';
 import { prisma } from '@/lib/db/prisma';
 import { getSession, setSession } from '@/lib/cache/redis';
@@ -196,8 +196,8 @@ export async function POST(req: NextRequest) {
       { role: 'user' as const, content: message }
     ];
 
-    // Envoyer à Claude (ou au mock)
-    const response = await sendMessage(messages, systemPrompt);
+    // Envoyer à Claude (ou au mock) avec métriques
+    const apiResponse = await sendMessageWithMetrics(messages, systemPrompt);
 
     // Sauvegarder dans la database
     let dbConversationId = conversationId;
@@ -249,14 +249,18 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Sauvegarder la réponse de l'assistant
+    // Sauvegarder la réponse de l'assistant avec métriques
     await prisma.message.create({
       data: {
         conversationId: dbConversationId,
         role: 'assistant',
-        content: response,
+        content: apiResponse.content,
         coach: coach,
-        model: 'claude-3-haiku-20240307',
+        model: apiResponse.model,
+        tokensInput: apiResponse.tokensInput,
+        tokensOutput: apiResponse.tokensOutput,
+        cost: apiResponse.cost,
+        responseTimeMs: apiResponse.responseTimeMs,
       },
     });
 
@@ -271,14 +275,23 @@ export async function POST(req: NextRequest) {
       coach,
       conversationId: dbConversationId,
       userMessage: message.substring(0, 100),
-      responseLength: response.length,
+      responseLength: apiResponse.content.length,
+      tokensIn: apiResponse.tokensInput,
+      tokensOut: apiResponse.tokensOutput,
+      cost: `$${apiResponse.cost.toFixed(6)}`,
+      responseTime: `${apiResponse.responseTimeMs}ms`,
     });
 
     return NextResponse.json({
-      message: response,
+      message: apiResponse.content,
       coach,
       timestamp: new Date().toISOString(),
       conversationId: dbConversationId,
+      metrics: {
+        tokensInput: apiResponse.tokensInput,
+        tokensOutput: apiResponse.tokensOutput,
+        responseTimeMs: apiResponse.responseTimeMs,
+      },
     });
 
   } catch (error) {
