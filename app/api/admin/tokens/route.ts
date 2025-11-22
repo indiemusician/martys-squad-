@@ -86,9 +86,12 @@ export async function GET() {
       month: formatStats(monthStats),
       allTime: formatStats(allTimeStats),
       daily: dailyStats,
-      recentResponses: recentResponses.map((r) => ({
-        ...r,
+      recentResponses: (recentResponses || []).map((r) => ({
         createdAt: r.createdAt.toISOString(),
+        responseTimeMs: r.responseTimeMs || 0,
+        tokensInput: r.tokensInput || 0,
+        tokensOutput: r.tokensOutput || 0,
+        coach: r.coach || 'unknown',
       })),
       timestamp: new Date().toISOString(),
     });

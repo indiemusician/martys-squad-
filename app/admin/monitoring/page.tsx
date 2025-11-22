@@ -168,18 +168,18 @@ export default function MonitoringPage() {
                 </tr>
               </thead>
               <tbody>
-                {tokens.daily.map((day, i) => (
+                {(tokens.daily || []).map((day, i) => (
                   <tr key={day.date} className={i % 2 === 0 ? '' : 'bg-gray-800/50'}>
                     <td className="p-3">{day.date}</td>
-                    <td className="text-right p-3 font-mono">{day.requests}</td>
+                    <td className="text-right p-3 font-mono">{day.requests || 0}</td>
                     <td className="text-right p-3 font-mono">
-                      {(day.tokensInput / 1000).toFixed(1)}K
+                      {((day.tokensInput || 0) / 1000).toFixed(1)}K
                     </td>
                     <td className="text-right p-3 font-mono">
-                      {(day.tokensOutput / 1000).toFixed(1)}K
+                      {((day.tokensOutput || 0) / 1000).toFixed(1)}K
                     </td>
                     <td className="text-right p-3 font-mono text-green-400">
-                      ${day.cost.toFixed(4)}
+                      ${(day.cost || 0).toFixed(4)}
                     </td>
                   </tr>
                 ))}
@@ -193,24 +193,30 @@ export default function MonitoringPage() {
               <h3 className="font-semibold">Dernières réponses</h3>
             </div>
             <div className="divide-y divide-gray-700">
-              {tokens.recentResponses.slice(0, 5).map((r, i) => (
-                <div key={i} className="p-4 flex justify-between items-center">
-                  <div>
-                    <span className="capitalize font-medium">{r.coach || 'unknown'}</span>
-                    <span className="text-gray-400 text-sm ml-3">
-                      {new Date(r.createdAt).toLocaleTimeString('fr-FR')}
-                    </span>
-                  </div>
-                  <div className="flex gap-6 text-sm font-mono">
-                    <span className="text-gray-400">
-                      {r.tokensInput}↓ / {r.tokensOutput}↑
-                    </span>
-                    <span className={r.responseTimeMs > 2000 ? 'text-orange-400' : 'text-green-400'}>
-                      {r.responseTimeMs}ms
-                    </span>
-                  </div>
+              {(tokens.recentResponses || []).length === 0 ? (
+                <div className="p-4 text-gray-400 text-center">
+                  Aucune réponse récente
                 </div>
-              ))}
+              ) : (
+                (tokens.recentResponses || []).slice(0, 5).map((r, i) => (
+                  <div key={i} className="p-4 flex justify-between items-center">
+                    <div>
+                      <span className="capitalize font-medium">{r.coach || 'unknown'}</span>
+                      <span className="text-gray-400 text-sm ml-3">
+                        {new Date(r.createdAt).toLocaleTimeString('fr-FR')}
+                      </span>
+                    </div>
+                    <div className="flex gap-6 text-sm font-mono">
+                      <span className="text-gray-400">
+                        {r.tokensInput || 0}↓ / {r.tokensOutput || 0}↑
+                      </span>
+                      <span className={(r.responseTimeMs || 0) > 2000 ? 'text-orange-400' : 'text-green-400'}>
+                        {r.responseTimeMs || 0}ms
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         </>
