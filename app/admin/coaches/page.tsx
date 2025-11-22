@@ -68,10 +68,10 @@ export default function CoachesPage() {
     );
   }
 
-  if (!stats) return <p className="text-red-400">Erreur de chargement</p>;
+  if (!stats || !stats.coaches) return <p className="text-red-400">Erreur de chargement</p>;
 
-  const sortedCoaches = [...stats.coaches].sort(
-    (a, b) => b.conversations.allTime - a.conversations.allTime
+  const sortedCoaches = [...(stats.coaches || [])].sort(
+    (a, b) => (b.conversations?.allTime || 0) - (a.conversations?.allTime || 0)
   );
 
   return (
@@ -108,22 +108,22 @@ export default function CoachesPage() {
                   </div>
                 </td>
                 <td className="text-right p-4 font-mono">
-                  {coach.conversations.allTime.toLocaleString()}
+                  {(coach.conversations?.allTime || 0).toLocaleString()}
                 </td>
                 <td className="text-right p-4 font-mono">
-                  {coach.conversations.week.toLocaleString()}
+                  {(coach.conversations?.week || 0).toLocaleString()}
                 </td>
                 <td className="text-right p-4 font-mono">
-                  {coach.messages.toLocaleString()}
+                  {(coach.messages || 0).toLocaleString()}
                 </td>
                 <td className="text-right p-4 font-mono text-sm">
-                  {(coach.tokens.total / 1000).toFixed(1)}K
+                  {((coach.tokens?.total || 0) / 1000).toFixed(1)}K
                 </td>
                 <td className="text-right p-4 font-mono text-green-400">
-                  ${coach.cost.toFixed(4)}
+                  ${(coach.cost || 0).toFixed(4)}
                 </td>
                 <td className="text-right p-4 font-mono">
-                  {coach.avgResponseTime}ms
+                  {coach.avgResponseTime || 0}ms
                 </td>
               </tr>
             ))}
@@ -138,18 +138,22 @@ export default function CoachesPage() {
             🔀 Handoffs depuis Marty
           </h3>
           <p className="text-3xl font-bold text-blue-400 mb-4">
-            {stats.handoffs.total}
+            {stats.handoffs?.total || 0}
           </p>
           <div className="space-y-2">
-            {stats.handoffs.breakdown.map((h) => (
-              <div key={h.to} className="flex justify-between items-center">
-                <span className="flex items-center gap-2">
-                  <span>{coachEmojis[h.to]}</span>
-                  <span className="capitalize">{h.to}</span>
-                </span>
-                <span className="font-mono">{h.count}</span>
-              </div>
-            ))}
+            {(stats.handoffs?.breakdown || []).length === 0 ? (
+              <p className="text-gray-400">Aucun handoff</p>
+            ) : (
+              (stats.handoffs?.breakdown || []).map((h) => (
+                <div key={h.to} className="flex justify-between items-center">
+                  <span className="flex items-center gap-2">
+                    <span>{coachEmojis[h.to]}</span>
+                    <span className="capitalize">{h.to}</span>
+                  </span>
+                  <span className="font-mono">{h.count}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 
@@ -157,8 +161,8 @@ export default function CoachesPage() {
           <h3 className="text-lg font-semibold mb-4">📊 Répartition</h3>
           <div className="space-y-3">
             {sortedCoaches.map((coach) => {
-              const total = stats.coaches.reduce((s, c) => s + c.conversations.allTime, 0);
-              const pct = total > 0 ? (coach.conversations.allTime / total) * 100 : 0;
+              const total = (stats.coaches || []).reduce((s, c) => s + (c.conversations?.allTime || 0), 0);
+              const pct = total > 0 ? ((coach.conversations?.allTime || 0) / total) * 100 : 0;
               return (
                 <div key={coach.name} className="space-y-1">
                   <div className="flex justify-between text-sm">
@@ -168,7 +172,7 @@ export default function CoachesPage() {
                   <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full"
-                      style={{ width: `${pct}%`, backgroundColor: coach.color }}
+                      style={{ width: `${pct}%`, backgroundColor: coach.color || '#6b7280' }}
                     />
                   </div>
                 </div>
